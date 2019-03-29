@@ -71,31 +71,26 @@ int main(void)
 	int getcmd()
 	{
 		int *length = malloc(sizeof(int));
-		memset(length, 0, sizeof(int));
-
 		size_t *linecap = malloc(sizeof(size_t));
-		memset(linecap, 0, sizeof(size_t));
-
 		int *j = malloc(sizeof(int));
-		memset(j, 0, sizeof(int));
-
 		char *token = tok_addr;
-		memset(token, 0, sizeof(token));
-
 		char *line = line_addr;
-		memset(line, 0, sizeof(line_addr));
-
+		
 		printf("%s", prompt);
 		*length = getline(&line, linecap, stdin);
 
-		if (*length <= 0)
+		if (*length <= 0){
 			exit(-1);
-		else if (index(line, '&')!= NULL)
+		}
+		else if (index(line, '&')!= NULL){
 			bg = 1;
-		else if (index(line, '>')!= NULL)
+		}
+		else if (index(line, '>')!= NULL){
 			redir = 1;
-		else if (index(line, '|')!= NULL)
+		}
+		else if (index(line, '|')!= NULL){
 			pipe_num = 1;
+		}
 		else{
 			bg = 0;
 			redir = 0;
@@ -103,9 +98,11 @@ int main(void)
 		}
 
 		while ((token = strsep(&line, " \t\n&")) != NULL) {
-			for (*j = 0; *j < strlen(token); *j = *j + 1)
-				if (token[*j] <= 32)
+			for (*j = 0; *j < strlen(token); *j = *j + 1){
+				if (token[*j] <= 32){
 					token[*j] = '\0';
+				}
+			}
 			if (strlen(token) > 0){
 				args[numargs++] = token;
 			}
@@ -120,41 +117,46 @@ int main(void)
 	}
 
 	int builtin(){
-		if(strcmp(args[0], "cd")==0) //built in method; uses system call
+		if(strcmp(args[0], "cd")==0){ //built in method; uses system call
 			chdir(args[1]);
-
-		else if(strcmp(args[0], "fg")==0){ //built in method; moves a process from the bg process array to the front
-			child_id = active[atoi(args[1])];
-			waitpid(child_id, NULL, 0);
 		}
-		else if(strcmp(args[0], "pwd")==0) //built in method; uses system call
+		else if(strcmp(args[0], "fg")==0){ //built in method; moves a process from the bg process array to the front
+			if(active[0]==0){
+				printf("No process currently running in the background.\n");
+			}
+			else{
+				child_id = active[atoi(args[1])];
+				waitpid(child_id, NULL, 0);
+			}
+		}
+		else if(strcmp(args[0], "pwd")==0){ //built in method; uses system call
 			printf("%s\n", getcwd(NULL, 0));
-
+		}
 		else if(strcmp(args[0], "jobs")==0){ //built in method; reads the array storing active bg processes
 			printf("\nACTIVE JOBS\nPOS\tNAME\n");
-			for(i = 0; i < bgcounter; i++)
-				if(activenames[i])
+			for(i = 0; i < bgcounter; i++){
+				if(activenames[i]){
 					printf("%d\t%s\n", i, activenames[i]);
+				}
+			}
 		}
-		else
+		else{
 			return -1;
+		}
 	}
 
 	int arrsearch(char* element){
-		for(i = 0; i < maxargs/sizeof(char); i++)
-			if(strcmp(args[i],element)==0)
+		for(i = 0; i < maxargs/sizeof(char); i++){
+			if(strcmp(args[i],element)==0){
 				return i;
+			}
+		}
 	}
 
 	void redirect(){ // sets up for executing line of the form: (function) > (output_location)
 		i = arrsearch(">");
-
 		file_loc = file_loc_perm;
-
 		memcpy(file_loc, args[i+1], sizeof(args[i+1]));
-
-		memset((args + i), 0, sizeof((args+i)));
-		
 		f_redir = fopen(file_loc, "w+");		
 		dup2(fileno(f_redir), 1);
 	}
@@ -163,9 +165,7 @@ int main(void)
 		i = arrsearch("|");
 
 		redirArgs = redirArgs_perm;
-
-                memset(redirArgs, 0, sizeof(maxargs));
-                memcpy(redirArgs, args, i*sizeof(char*));
+        memcpy(redirArgs, args, i*sizeof(char*));
 
 		pipe(fd);
 	
@@ -185,11 +185,13 @@ int main(void)
 	}
 
 	void dochild(){
-		if(pipe_num)
+		if(pipe_num){
 			setupPipe();
+		}
 
-		if(bg)
+		if(bg){
 			signal(SIGINT, SIG_IGN);
+		}
 
 		if(execvp(args[0], args)==-1){
 			printf("\nInvalid command: %s", args[0]);
@@ -204,57 +206,61 @@ int main(void)
 			printf("Running in background: %s\n", *(activenames+bgcounter));
 			bgcounter++;
 		}
-
-		else
+		else{
 			waitpid((pid_t)child_id, NULL, 0);
+		}
 	}
 
 	void cleanbg(int kill_id){
-                for(i = 0; i < bgcounter; i++){
-                        if(active[i] == bgstatus)
-                                 break;
-			if(active[i] == kill_id)
+        for(i = 0; i < bgcounter; i++){
+			if(active[i] == bgstatus){
 				break;
+			}
+			if(active[i] == kill_id){
+				break;
+			}
 		}
 
-                for(i; bgcounter > 0 && i < bgcounter; i++){
-                    *(active + i) = *(active + i + 1);
-                    *(activenames+i) = *(activenames+i+1);
-                }
+		for(i; bgcounter > 0 && i < bgcounter; i++){
+			*(active + i) = *(active + i + 1);
+			*(activenames+i) = *(activenames+i+1);
+		}
 
 		bgcounter--;
-        }
+    }
 
 	void cleanup(){
-		if(f_redir!=0)
-				fclose(f_redir);
+		if(f_redir!=0){
+			fclose(f_redir);
+		}
 
 		dup2(stdin_cp, 0);
 		dup2(stdout_cp, 1);
 
-		if(bg|redir|pipe_num)
+		if(bg|redir|pipe_num){
 			numargs--;
+		}
 
-		for(i = 0; i < numargs; i++)
+		for(i = 0; i < numargs; i++){
 			free(args[i]);
-        }
+		}
+    }
 	
 	void sighandler(int signum){
 		if(signum == SIGINT){
 			kill(child_id, SIGKILL);
 			cleanbg(child_id); 
 		}
-		if(signum == SIGTSTP)
+		if(signum == SIGTSTP){
 			SIG_IGN;
-        }
+		}
+    }
 
 	signal(SIGTSTP, sighandler);
 	signal(SIGINT, sighandler);
 
-	while(1) {
-		
+	while(1) {	
 		setup();
-		
 		getcmd();
 
 		if(numargs){

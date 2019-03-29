@@ -1,5 +1,2 @@
 # Mini Shell
-# Instructions
-	* Compilation: gdb minishell.c -o minishell
-	* Execution: ./minishell
-	* Note that the extensionless minishell in compilation is the output filename and execution simply calls this. Feel free to name the file something other than minishell.
+Simply type "make" to create the output file minishell and you're good to go.
