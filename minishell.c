@@ -7,7 +7,7 @@
 
 int main(void)
 {
-        int child_id;
+    int child_id;
 
 	int numargs;
 	int maxargs = 100 * sizeof(char*);
@@ -56,14 +56,14 @@ int main(void)
 		
 	void setup(){
 		args = args_perm;
-                memset(args, 0, maxargs);
-                numargs = 0;
+        memset(args, 0, maxargs);
+        numargs = 0;
 
 		bg = 0;
-                bgstatus = 0;
+        bgstatus = 0;
 
 		redir = 0;
-                f_redir = 0;
+        f_redir = 0;
 
 		pipe_num = 0;
 	}
@@ -218,18 +218,18 @@ int main(void)
 		}
 
                 for(i; bgcounter > 0 && i < bgcounter; i++){
-                        *(active + i) = *(active + i + 1);
-                        *(activenames+i) = *(activenames+i+1);
+                    *(active + i) = *(active + i + 1);
+                    *(activenames+i) = *(activenames+i+1);
                 }
 
 		bgcounter--;
         }
 
 	void cleanup(){
-                if(f_redir!=0)
-                        fclose(f_redir);
+		if(f_redir!=0)
+				fclose(f_redir);
 
-                dup2(stdin_cp, 0);
+		dup2(stdin_cp, 0);
 		dup2(stdout_cp, 1);
 
 		if(bg|redir|pipe_num)
@@ -260,7 +260,7 @@ int main(void)
 		if(numargs){
 			if(builtin()==-1){
 				
-                		if(strcmp(args[0], "exit")==0){ //built in method; uses system call
+				if(strcmp(args[0], "exit")==0){ //built in method; uses system call
 					cleanup();
 					break;
 				}
@@ -282,7 +282,7 @@ int main(void)
 		}
 
 		if((bgstatus = waitpid(-1, NULL, WNOHANG)) > 0)
-                        cleanbg(0);
+			cleanbg(0);
 
 		cleanup();
 	}
