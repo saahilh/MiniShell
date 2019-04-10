@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -136,6 +137,21 @@ int handle_next_command(int num_args){
 		else if(strcmp(command, "exit")==0){ //built in method; uses system call
 			exit(EXIT_SUCCESS);
 		}
+		else if(strcmp(command, "ls")==0){ //built in method; uses system call
+			if(num_args = 1){
+				args[1] = ".";
+			}
+			DIR *d;
+		
+			struct dirent *dir;
+			d = opendir(args[1]);
+			if(d){
+				while(dir = readdir(d)){
+					printf("%s\t", dir -> d_name);
+				}
+				closedir(d);
+			}
+		}
 		else if(strcmp(command, "jobs")==0){ //built in method; reads the array storing active bg processes
 			printf("\nACTIVE JOBS\nPOS\tNAME\n");
 			
@@ -153,7 +169,7 @@ int handle_next_command(int num_args){
 		}
 		else{
 			int child_id = fork();
-			printf("%s", args[0]);
+			
 			switch(child_id){
 				case -1:
 					exit(EXIT_FAILURE);
