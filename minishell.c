@@ -29,7 +29,7 @@ int getcmd(){
 	printf("%s", PROMPT);
 	
 	size_t length = 0;
-	char* user_input;
+	char* user_input = NULL;
 	getline(&user_input, &length, stdin);
 
 	if(length <= 0){
@@ -113,8 +113,35 @@ int handle_next_command(int num_args){
 	if(num_args > 0){
 		char* command = args[0];
 		
+		if(arr_search(">", num_args)!=-1){
+			int redirect_char_location = arr_search(">", num_args);
+			char* target_file_name = args[redirect_char_location+1];
+			f_redir = fopen(target_file_name, "w+");		
+			dup2(fileno(f_redir), 1);
+			
+			char* new_args[redirect_char_location];
+			for(int i = 0; i < redirect_char_location; i++){
+				new_args[i] = args[i];
+			}
+			args = new_args;
+			num_args = redirect_char_location;
+		}
+		
 		if(strcmp(command, "cd")==0){ //built in method; uses system call
 			chdir(args[1]);
+		}
+		else if(strcmp(command, "pwd")==0){ //built in method; uses system call
+			printf("%s\n", getcwd(NULL, 0));
+		}
+		else if(strcmp(command, "exit")==0){ //built in method; uses system call
+			exit(EXIT_SUCCESS);
+		}
+		else if(strcmp(command, "jobs")==0){ //built in method; reads the array storing active bg processes
+			printf("\nACTIVE JOBS\nPOS\tNAME\n");
+			
+			for(int i = 0; i < bgcounter; i++){
+				printf("%d\t%s\n", i, active[i].name);
+			}
 		}
 		else if(strcmp(command, "fg")==0){ //built in method; moves a process from the bg process array to the front
 			if(active[0].pid==0){
@@ -124,35 +151,9 @@ int handle_next_command(int num_args){
 				waitpid(active[atoi(args[1])].pid, NULL, 0);
 			}
 		}
-		else if(strcmp(command, "pwd")==0){ //built in method; uses system call
-			printf("%s\n", getcwd(NULL, 0));
-		}
-		else if(strcmp(command, "jobs")==0){ //built in method; reads the array storing active bg processes
-			printf("\nACTIVE JOBS\nPOS\tNAME\n");
-			
-			for(int i = 0; i < bgcounter; i++){
-				printf("%d\t%s\n", i, active[i].name);
-			}
-		}
-		else if(strcmp(command, "exit")==0){ //built in method; uses system call
-			exit(EXIT_SUCCESS);
-		}
-		else if(arr_search(">", num_args)!=-1){
-			int redirect_char_location = arr_search(">", num_args);
-			f_redir = fopen(args[redirect_char_location+1], "w+");		
-			dup2(fileno(f_redir), 1);
-			
-			char* new_args[redirect_char_location];
-			for(int i = 0; i < redirect_char_location; i++){
-				memcpy(new_args[i], args[i], sizeof(char*));
-			}
-			args = new_args;
-			
-			handle_next_command(redirect_char_location);
-		}
 		else{
 			int child_id = fork();
-			
+			printf("%s", args[0]);
 			switch(child_id){
 				case -1:
 					exit(EXIT_FAILURE);
@@ -206,16 +207,17 @@ int main(void){
 	while(1) {	
 		f_redir = 0;
 		memset(args_array, 0, sizeof(args_array));
+		args = args_array;
 		
 		dup2(stdin_cp, 0);
 		dup2(stdout_cp, 1);
 		
+		int num_args = getcmd();
+		handle_next_command(num_args);
+		
 		if(f_redir!=0){
 			fclose(f_redir);
 		}
-		
-		int num_args = getcmd();
-		handle_next_command(num_args);
 		
 		// Non-blocking check to see if any child process has terminated
 		int bg_status = waitpid(-1, NULL, WNOHANG);
