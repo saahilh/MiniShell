@@ -1,2 +1,2 @@
 default:
-	gcc minishell.c -o minishell
+	gcc -g minishell.c -o minishell

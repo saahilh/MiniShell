@@ -4,302 +4,224 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-
-int main(void)
-{
-    int child_id;
-
-	int numargs;
-	int maxargs = 100 * sizeof(char*);
-
-	char **args_perm = malloc(maxargs);
-	memset(args_perm, 0, sizeof(args_perm));
-	char **args = args_perm;
-
-	//prompt variables
-	char *prompt = "\nminishell>> ";
-
-	char *line_addr = malloc(sizeof(char*));
-	memset(line_addr, 0, sizeof(line_addr));
-
-	char *tok_addr = malloc(sizeof(char*));
-	memset(tok_addr, 0, sizeof(tok_addr));
-
-	//special function call variables
-	int bg, redir, pipe_num;
-
-	//file handling variables
-	char *file_loc_perm = malloc(100*sizeof(char));
-	memset(file_loc_perm, 0, sizeof(file_loc_perm));
-	char *file_loc = file_loc_perm;
-
-	int fd[2];
-
-	int stdout_cp = dup(1);
-	int stdin_cp = dup(0);
-
-	FILE *f_redir;
-
-	//background process holding variables
-	int bgcounter = 0, bgstatus;
-	int active[20];
-	char **activenames = malloc(20*sizeof(char*));
-	memset(activenames, 0, sizeof(activenames));
-
-	//array of arguments sent to redirected method
-        char **redirArgs_perm = malloc(maxargs);
-	memset(redirArgs_perm, 0, sizeof(redirArgs_perm));
-	char **redirArgs = redirArgs_perm;
 	
-	//misc. variables
-	int i = 0;
-		
-	void setup(){
-		args = args_perm;
-        memset(args, 0, maxargs);
-        numargs = 0;
+#define MAX_ARGS	100
+#define PROMPT		"\nminishell>> "
+#define	MAX_BG_PROCESSES	20
 
-		bg = 0;
-        bgstatus = 0;
+typedef struct active_process_t{
+	int pid;
+	char* name;
+} ActiveProcess;
 
-		redir = 0;
-        f_redir = 0;
+char* args_array[MAX_ARGS];
+char** args = args_array;
 
-		pipe_num = 0;
+char* bg;
+
+FILE* f_redir;
+int bgcounter = 0;
+ActiveProcess active[MAX_BG_PROCESSES];
+
+int getcmd(){
+	int num_args = 0;
+	
+	printf("%s", PROMPT);
+	
+	size_t length = 0;
+	char* user_input;
+	getline(&user_input, &length, stdin);
+
+	if(length <= 0){
+		exit(-1);
+	}
+	else{
+		bg = index(user_input, '&');
 	}
 
-	int getcmd()
-	{
-		int *length = malloc(sizeof(int));
-		size_t *linecap = malloc(sizeof(size_t));
-		int *j = malloc(sizeof(int));
-		char *token = tok_addr;
-		char *line = line_addr;
-		
-		printf("%s", prompt);
-		*length = getline(&line, linecap, stdin);
+	char* token;
+	while((token = strsep(&user_input, " \t\n&")) != NULL){
+		if(strlen(token) > 0){
+			args[num_args++] = token;
+		}
+	}
+	
+	free(user_input);
+	return num_args;
+}
 
-		if (*length <= 0){
-			exit(-1);
+int arr_search(char* element, int num_args){
+	for(int i = 0; i < num_args; i++){
+		if(strcmp(args[i], element)==0){
+			return i;
 		}
-		else if (index(line, '&')!= NULL){
-			bg = 1;
-		}
-		else if (index(line, '>')!= NULL){
-			redir = 1;
-		}
-		else if (index(line, '|')!= NULL){
-			pipe_num = 1;
-		}
-		else{
-			bg = 0;
-			redir = 0;
-			pipe_num = 0;
-		}
+	}
+	return -1;
+}
 
-		while ((token = strsep(&line, " \t\n&")) != NULL) {
-			for (*j = 0; *j < strlen(token); *j = *j + 1){
-				if (token[*j] <= 32){
-					token[*j] = '\0';
-				}
-			}
-			if (strlen(token) > 0){
-				args[numargs++] = token;
-			}
+void setup_pipe(int num_args){
+	int created_pipe[2];
+	pipe(created_pipe);
+	
+	int pipe_character_position = arr_search("|", num_args);
+	int child_id = fork();
+	
+	switch(child_id){
+		case -1:
+			exit(EXIT_FAILURE);
+		case 0:
+			close(created_pipe[0]);
+			dup2(created_pipe[1], 1);
+			close(created_pipe[1]);
+
+			char** new_args;
+			memcpy(new_args, args, pipe_character_position*sizeof(char*));
+			args = new_args;
+		default:
+			close(created_pipe[1]);
+			dup2(created_pipe[0], 0);
+			close(created_pipe[0]);
+			args = &args[pipe_character_position+1];
+	}
+}
+
+void cleanbg(int kill_id){
+	int i;
+	
+	for(i = 0; i < bgcounter; i++){
+		if(active[i].pid == kill_id){
+			break;
 		}
-
-		if(token)	free(token);
-		if(length)	free(length);
-		if(linecap)	free(linecap);
-		if(j)		free(j);
-
-		return numargs;
 	}
 
-	int builtin(){
-		if(strcmp(args[0], "cd")==0){ //built in method; uses system call
+	if(bgcounter > 1){
+		ActiveProcess* new_active_list[MAX_BG_PROCESSES - i];
+		memcpy(new_active_list, active + i * sizeof(ActiveProcess), sizeof(new_active_list));
+		memset(active + i*sizeof(ActiveProcess), 0, sizeof(ActiveProcess) + sizeof(new_active_list));
+		memcpy(active + i*sizeof(ActiveProcess), new_active_list, sizeof(new_active_list));
+		
+		bgcounter--;
+	}
+	else{
+		bgcounter = 0;
+		memset(active, 0, sizeof(active));
+	}
+	
+}
+
+int handle_next_command(int num_args){
+	if(num_args > 0){
+		char* command = args[0];
+		
+		if(strcmp(command, "cd")==0){ //built in method; uses system call
 			chdir(args[1]);
 		}
-		else if(strcmp(args[0], "fg")==0){ //built in method; moves a process from the bg process array to the front
-			if(active[0]==0){
+		else if(strcmp(command, "fg")==0){ //built in method; moves a process from the bg process array to the front
+			if(active[0].pid==0){
 				printf("No process currently running in the background.\n");
 			}
 			else{
-				child_id = active[atoi(args[1])];
-				waitpid(child_id, NULL, 0);
+				waitpid(active[atoi(args[1])].pid, NULL, 0);
 			}
 		}
-		else if(strcmp(args[0], "pwd")==0){ //built in method; uses system call
+		else if(strcmp(command, "pwd")==0){ //built in method; uses system call
 			printf("%s\n", getcwd(NULL, 0));
 		}
-		else if(strcmp(args[0], "jobs")==0){ //built in method; reads the array storing active bg processes
+		else if(strcmp(command, "jobs")==0){ //built in method; reads the array storing active bg processes
 			printf("\nACTIVE JOBS\nPOS\tNAME\n");
-			for(i = 0; i < bgcounter; i++){
-				if(activenames[i]){
-					printf("%d\t%s\n", i, activenames[i]);
-				}
+			
+			for(int i = 0; i < bgcounter; i++){
+				printf("%d\t%s\n", i, active[i].name);
 			}
+		}
+		else if(strcmp(command, "exit")==0){ //built in method; uses system call
+			exit(EXIT_SUCCESS);
+		}
+		else if(arr_search(">", num_args)!=-1){
+			int redirect_char_location = arr_search(">", num_args);
+			f_redir = fopen(args[redirect_char_location+1], "w+");		
+			dup2(fileno(f_redir), 1);
+			
+			char* new_args[redirect_char_location];
+			for(int i = 0; i < redirect_char_location; i++){
+				memcpy(new_args[i], args[i], sizeof(char*));
+			}
+			args = new_args;
+			
+			handle_next_command(redirect_char_location);
 		}
 		else{
-			return -1;
-		}
-	}
-
-	int arrsearch(char* element){
-		for(i = 0; i < maxargs/sizeof(char); i++){
-			if(strcmp(args[i],element)==0){
-				return i;
+			int child_id = fork();
+			
+			switch(child_id){
+				case -1:
+					exit(EXIT_FAILURE);
+				case 0:
+					if(arr_search("|", num_args)!=-1){
+						setup_pipe(num_args);
+					}
+					else if(bg){
+						signal(SIGINT, SIG_IGN);
+					}
+					
+					if(execvp(args[0], args)==-1){
+						printf("\nInvalid command: %s", args[0]);
+						exit(EXIT_FAILURE);
+					}
+				default:
+					if(bg){
+						active[bgcounter].pid = child_id;
+						active[bgcounter].name = args[0];
+						printf("Running in background: %s\n", active[bgcounter].name);
+						bgcounter++;
+					}
+					else{
+						waitpid((pid_t) child_id, NULL, 0);
+					}
 			}
 		}
 	}
-
-	void redirect(){ // sets up for executing line of the form: (function) > (output_location)
-		i = arrsearch(">");
-		file_loc = file_loc_perm;
-		memcpy(file_loc, args[i+1], sizeof(args[i+1]));
-		f_redir = fopen(file_loc, "w+");		
-		dup2(fileno(f_redir), 1);
-	}
-
-	void setupPipe(){
-		i = arrsearch("|");
-
-		redirArgs = redirArgs_perm;
-        memcpy(redirArgs, args, i*sizeof(char*));
-
-		pipe(fd);
 	
-		child_id = fork();
-		if(child_id==0){
-			close(fd[0]);
-			dup2(fd[1], 1);
-			close(fd[1]);
-			args = redirArgs_perm;
-		}
-		else{
-			close(fd[1]);
-			dup2(fd[0], 0);
-			close(fd[0]);
-			args = args + i + 1;
-		}
+	return 0;
+}
+
+void sighandler(int signum){
+	if(signum == SIGINT){
+		int pid = getpid();
+		kill(pid, SIGKILL);
+		cleanbg(pid);
 	}
-
-	void dochild(){
-		if(pipe_num){
-			setupPipe();
-		}
-
-		if(bg){
-			signal(SIGINT, SIG_IGN);
-		}
-
-		if(execvp(args[0], args)==-1){
-			printf("\nInvalid command: %s", args[0]);
-			exit(EXIT_FAILURE);
-		}
+	if(signum == SIGTSTP){
+		SIG_IGN;
 	}
+}
 
-	void doparent(){
-		if(bg){
-			active[bgcounter] = child_id;
-			memcpy(activenames+bgcounter, args, sizeof(char*));
-			printf("Running in background: %s\n", *(activenames+bgcounter));
-			bgcounter++;
-		}
-		else{
-			waitpid((pid_t)child_id, NULL, 0);
-		}
-	}
-
-	void cleanbg(int kill_id){
-        for(i = 0; i < bgcounter; i++){
-			if(active[i] == bgstatus){
-				break;
-			}
-			if(active[i] == kill_id){
-				break;
-			}
-		}
-
-		for(i; bgcounter > 0 && i < bgcounter; i++){
-			*(active + i) = *(active + i + 1);
-			*(activenames+i) = *(activenames+i+1);
-		}
-
-		bgcounter--;
-    }
-
-	void cleanup(){
-		if(f_redir!=0){
-			fclose(f_redir);
-		}
-
-		dup2(stdin_cp, 0);
-		dup2(stdout_cp, 1);
-
-		if(bg|redir|pipe_num){
-			numargs--;
-		}
-
-		for(i = 0; i < numargs; i++){
-			free(args[i]);
-		}
-    }
+int main(void){
+	int stdin_cp = dup(0);
+	int stdout_cp = dup(1);
 	
-	void sighandler(int signum){
-		if(signum == SIGINT){
-			kill(child_id, SIGKILL);
-			cleanbg(child_id); 
-		}
-		if(signum == SIGTSTP){
-			SIG_IGN;
-		}
-    }
-
 	signal(SIGTSTP, sighandler);
 	signal(SIGINT, sighandler);
 
 	while(1) {	
-		setup();
-		getcmd();
-
-		if(numargs){
-			if(builtin()==-1){
-				
-				if(strcmp(args[0], "exit")==0){ //built in method; uses system call
-					cleanup();
-					break;
-				}
-
-				if(redir)
-					redirect();
-
-				switch(child_id = fork()){
-					case -1:
-						exit(EXIT_FAILURE);
-
-					case 0:
-						dochild();
-
-					default:
-						doparent();
-				}
-			}
+		f_redir = 0;
+		memset(args_array, 0, sizeof(args_array));
+		
+		dup2(stdin_cp, 0);
+		dup2(stdout_cp, 1);
+		
+		if(f_redir!=0){
+			fclose(f_redir);
 		}
-
-		if((bgstatus = waitpid(-1, NULL, WNOHANG)) > 0)
-			cleanbg(0);
-
-		cleanup();
+		
+		int num_args = getcmd();
+		handle_next_command(num_args);
+		
+		// Non-blocking check to see if any child process has terminated
+		int bg_status = waitpid(-1, NULL, WNOHANG);
+		
+		if(bg_status > 0){
+			cleanbg(bg_status);
+		}
 	}
-
-	if(tok_addr)		free(tok_addr);
-	if(line_addr)		free(line_addr);
-	if(file_loc_perm)	free(file_loc_perm);
-	if(redirArgs_perm)	free(redirArgs_perm);
-	if(args_perm)		free(args_perm);
-	if(activenames)		free(activenames);
-
-	exit(EXIT_SUCCESS);
 }
-
