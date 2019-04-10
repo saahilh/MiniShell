@@ -114,6 +114,8 @@ int handle_next_command(int num_args){
 	if(num_args > 0){
 		char* command = args[0];
 		
+		// TODO: cd, mkdir, cat, mv, cp, rm, kill
+		
 		if(arr_search(">", num_args)!=-1){
 			int redirect_char_location = arr_search(">", num_args);
 			char* target_file_name = args[redirect_char_location+1];
